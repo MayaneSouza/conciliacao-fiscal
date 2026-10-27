@@ -108,6 +108,7 @@ async function desenharAba() {
     else if (a.id === "importacoes") await abaImportacoes(main);
     else if (a.id === "usuarios") await abaUsuarios(main);
     else await abaDocs(main, a);
+    rotular(main);
   } catch (e) { main.innerHTML = `<section><div class="msg e">Erro: ${esc(e.message)}</div></section>`; }
 }
 
@@ -197,7 +198,16 @@ function tabela(a, rows) {
       return `<button class="btn" data-act="${x}" data-id="${r.id}">${ROTULO[x]}</button> `;
     }).join("")}</td>` : ""}</tr>`).join("")}</tbody></table></div>
     ${vis.length > lim ? `<p><button class="btn" data-more="1">Mostrar mais (${num(vis.length - lim)} restantes)</button></p>` : ""}` : `<p class="mu">Nada para mostrar com estes filtros.</p>`;
+  rotular($("#res"));
   sbar();
+}
+
+// No celular as tabelas viram cartões: cada célula recebe o nome da coluna (CSS usa data-label)
+function rotular(raiz = document) {
+  raiz.querySelectorAll(".pw table").forEach((t) => {
+    const h = [...t.querySelectorAll("thead tr:first-child th")].map((x) => x.textContent.trim());
+    t.querySelectorAll("tbody tr").forEach((tr) => [...tr.children].forEach((td, i) => { if (h[i]) td.dataset.label = h[i]; }));
+  });
 }
 
 // Congela o cabeçalho e coloca uma barra de rolagem horizontal logo abaixo dele, sincronizada com a tabela

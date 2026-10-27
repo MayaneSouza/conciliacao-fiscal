@@ -62,3 +62,28 @@ dialog::backdrop{background:rgba(0,0,0,.4)}dialog textarea{width:100%;min-height
 dialog select{width:100%}.dz{border:2px dashed var(--ln);border-radius:10px;padding:26px;text-align:center;color:var(--mu)}.dz.on{border-color:var(--ok);color:var(--ok)}
 .pv{margin-top:12px}.pv table{width:auto}.ul{margin:6px 0 0;padding-left:18px;color:var(--mu);font-size:12.5px}
 .gp label{margin-right:10px;white-space:nowrap}.hide{display:none!important}
+
+/* --- celular --- */
+@media (max-width:720px){
+  main{padding:12px}
+  section{padding:12px}
+  .pw{max-height:none;overflow:visible;border:0}
+  .pw table,.pw tbody,.pw tr,.pw td{display:block;width:100%}
+  .pw thead{display:none}
+  .pw tr{background:var(--bg);border:1px solid var(--ln);border-radius:8px;margin:0 0 10px;padding:4px 10px}
+  .pw td{display:flex;gap:10px;justify-content:space-between;border:0;border-bottom:1px solid var(--ln);white-space:normal;text-align:right;padding:6px 0;overflow-wrap:anywhere}
+  .pw td:last-child{border-bottom:0}
+  .pw td::before{content:attr(data-label);color:var(--mu);font-size:12px;text-align:left;flex:0 0 38%}
+  .pw td:empty{display:none}
+  .pw td.ac{display:block;text-align:left}.pw td.ac::before{display:none}.pw td.ac .btn{margin:4px 6px 4px 0}
+  .kc{word-break:break-all}
+  .flt2 input,.flt2 select{max-width:none;flex:1 1 100%}
+  .flt2 label{flex:1 1 45%}
+  input,select,textarea{font-size:16px}
+  .gp label{display:block;margin:2px 0}
+}
+@media (pointer:coarse){
+  .btn{min-height:40px;padding:8px 12px}
+  nav button{padding:12px 14px}
+}
+.dz input[type=file]{max-width:100%;font-size:14px;margin-top:8px}
