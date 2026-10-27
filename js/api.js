@@ -39,6 +39,7 @@ export const api = {
       return q.order("emissao", { ascending: false }).order("id").range(a, b);
     }, onProgress);
   },
+  async confrontoDados(ini, fim) { return ok(await sb.rpc("confronto_dados", { p_ini: ini, p_fim: fim })); },
   async resumo(ini, fim) { return ok(await sb.rpc("resumo_confronto", { p_ini: ini, p_fim: fim })); },
   async diretos(ini, fim) { return ok(await sb.rpc("resumo_diretos", { p_ini: ini, p_fim: fim })); },
   divergencias() { return allPages((a, b) => sb.from("divergencia").select("*").order("emissao", { ascending: false }).order("documento_id").range(a, b)); },

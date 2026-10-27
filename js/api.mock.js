@@ -36,6 +36,18 @@ export const api = {
   async estabs() { return estabs; },
   async docs(sits, prog, per = {}) { return docs.filter((d) => sits.includes(d.situacao) && (!per.ini || d.emissao >= per.ini) && (!per.fim || d.emissao <= per.fim)).map((d) => ({ ...d })); },
   async pessoais() { return docs.filter((d) => d.situacao === "pessoal").map((d) => ({ ...d })); },
+  async confrontoDados(ini, fim) {
+    const m = {}, ant = "2026-09-30";
+    for (const d of docs) {
+      if (d.situacao === "pessoal") continue;
+      const l = d.situacao === "lancado" ? d.data_lancamento || "2026-10-09" : d.situacao === "recusado" ? (d.recusado_em || "").slice(0, 10) : null;
+      const k = [d.estab, d.grupo, d.tipo, d.situacao, d.emissao < ini ? ant : d.emissao, l].join("|");
+      m[k] = (m[k] || 0) + 1;
+    }
+    const out = Object.entries(m).map(([k, q]) => { const [e, g, t, s2, dd, l] = k.split("|"); return { e: e === "" ? null : Number(e), g, t, s: s2, d: dd, l: l || null, q }; });
+    out.push({ e: 100, g: "Cavaco Forte", t: "Outros", s: "lancado", d: "2026-10-20", l: "2026-10-20", q: 3 });
+    return out;
+  },
   async resumo(ini, fim) {
     const m = {};
     for (const d of docs) if (d.emissao >= ini && d.emissao <= fim && d.situacao !== "pessoal") { const k = [d.grupo, d.estab, d.tipo, d.situacao].join("|"); m[k] = (m[k] || 0) + 1; }

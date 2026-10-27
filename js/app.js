@@ -2,6 +2,7 @@ import { Cadastro } from "./importers/cadastro.js";
 import { readViasoft } from "./importers/viasoft.js";
 import { readDocuments } from "./importers/documents.js";
 import { FormatError } from "./importers/util.js";
+import { preparar, calcular, html as confHtml, diaPadrao, diasDoMes } from "./confronto.js";
 
 const api = (await import(new URLSearchParams(location.search).has("mock") ? "./api.mock.js" : "./api.js")).api;
 const XLSX = window.XLSX;
@@ -11,22 +12,23 @@ const brl = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", c
 const dt = (iso) => (iso ? String(iso).slice(0, 10).split("-").reverse().join("/") : "");
 const num = (n) => Number(n || 0).toLocaleString("pt-BR");
 
-const S = { perfil: null, estabs: [], cache: {}, aba: "confronto", f: {}, lim: {}, mes: new Date().toISOString().slice(0, 7), grupo: "" };
+const S = { perfil: null, estabs: [], cache: {}, conf: {}, aba: "cf", f: {}, lim: {}, mes: new Date().toISOString().slice(0, 7), grupo: "" };
 const pode = () => S.perfil && ["operador", "administrador"].includes(S.perfil.papel);
 const admin = () => S.perfil?.papel === "administrador";
 const estabNome = (c) => { if (c == null) return "Sem estabelecimento"; const e = S.estabs.find((x) => x.cod === c); return e ? `${c} - ${e.nome}` : String(c); };
 const grupos = () => [...new Set(S.estabs.map((e) => e.grupo))].sort();
 
 const ABAS = [
-  { id: "confronto", nome: "Confronto" },
+  { id: "cf", nome: "Confronto CF" },
+  { id: "rn", nome: "Confronto Renova" },
   { id: "pendencias", nome: "Pendências", sits: ["pendente"], acoes: ["lancar", "recusar", "pessoal"], exporta: true },
   { id: "lancamentos", nome: "Lançamentos", sits: ["lancado"], acoes: ["desfazer"], periodo: true },
   { id: "nao_confirmados", nome: "Lançamentos não confirmados", sits: ["nao_confirmado"], acoes: ["desfazer"] },
-  { id: "divergencias", nome: "Divergências" },
-  { id: "revisao", nome: "Revisão" },
+  { id: "divergencias", nome: "Divergências de lançamentos" },
   { id: "recusadas", nome: "Recusadas", sits: ["recusado"], acoes: ["reverter_recusa"], extra: "recusa" },
-  { id: "pessoais", nome: "Pessoais", pessoais: true, acoes: ["reverter_pessoal"] },
   { id: "importacoes", nome: "Importações", op: true },
+  { id: "revisao", nome: "Revisão" },
+  { id: "pessoais", nome: "Pessoais", pessoais: true, acoes: ["reverter_pessoal"] },
   { id: "usuarios", nome: "Usuários", adm: true },
 ];
 
@@ -85,7 +87,7 @@ async function iniciar() {
 // ---------------------------------------------------------------- estrutura
 function desenharApp() {
   const abas = ABAS.filter((a) => (!a.op || pode()) && (!a.adm || admin()));
-  if (!abas.some((a) => a.id === S.aba)) S.aba = "confronto";
+  if (!abas.some((a) => a.id === S.aba)) S.aba = "cf";
   app.innerHTML = `<header>${api.mock ? '<div class="demo">Dados fictícios de teste. Nada aqui é real.</div>' : ""}<div class="bar hd"><h1>Conciliação fiscal</h1>
       <span class="who">${esc(S.perfil.nome)} · ${esc(S.perfil.papel)}</span><button class="btn" id="sai">Sair</button></div>
       <nav role="tablist">${abas.map((a) => `<button role="tab" data-aba="${a.id}" aria-selected="${a.id === S.aba}">${esc(a.nome)}</button>`).join("")}</nav></header>
@@ -100,7 +102,7 @@ async function desenharAba() {
   const a = ABAS.find((x) => x.id === S.aba), main = $("#main");
   main.innerHTML = `<section><p class="mu">Carregando…</p></section>`;
   try {
-    if (a.id === "confronto") await abaConfronto(main);
+    if (a.id === "cf" || a.id === "rn") await abaConf(main, a.id);
     else if (a.id === "divergencias") await abaDivergencias(main);
     else if (a.id === "revisao") await abaRevisao(main);
     else if (a.id === "importacoes") await abaImportacoes(main);
@@ -109,51 +111,19 @@ async function desenharAba() {
   } catch (e) { main.innerHTML = `<section><div class="msg e">Erro: ${esc(e.message)}</div></section>`; }
 }
 
-// ---------------------------------------------------------------- Confronto
-const TIPOS = ["NF-e", "CT-e", "NFS-e"];
-async function abaConfronto(main) {
-  const [y, m] = S.mes.split("-").map(Number);
-  const ini = `${S.mes}-01`, fim = `${S.mes}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
-  const [res, dir] = await Promise.all([api.resumo(ini, fim), api.diretos(ini, fim)]);
-  const idx = {};
-  for (const r of res) {
-    const k = `${r.estab ?? "x"}|${r.tipo}`; (idx[k] ??= {})[r.situacao] = Number(r.qtd);
-  }
-  const dmap = Object.fromEntries(dir.map((d) => [d.estab, Number(d.qtd)]));
-  const lista = (g) => [...S.estabs.filter((e) => e.grupo === g).map((e) => e.cod), ...(res.some((r) => r.estab == null && r.grupo === g) ? [null] : [])];
-  const calc = (cod) => {
-    const o = { dir: dmap[cod] ?? 0, rec: 0, t: {} };
-    for (const t of TIPOS) {
-      const x = idx[`${cod ?? "x"}|${t}`] ?? {};
-      const l = x.lancado ?? 0, p = (x.pendente ?? 0) + (x.nao_confirmado ?? 0);
-      o.t[t] = { l, p }; o.rec += x.recusado ?? 0;
-    }
-    o.l = TIPOS.reduce((s, t) => s + o.t[t].l, 0) + o.dir; o.p = TIPOS.reduce((s, t) => s + o.t[t].p, 0);
-    return o;
-  };
-  const gs = grupos().filter((g) => !S.grupo || g === S.grupo);
-  let L = 0, P = 0, R = 0;
-  const blocos = gs.map((g) => {
-    const linhas = lista(g).map((cod) => ({ cod, ...calc(cod) })).filter((x) => x.l + x.p + x.rec > 0 || x.cod != null);
-    const tl = linhas.reduce((s, x) => s + x.l, 0), tp = linhas.reduce((s, x) => s + x.p, 0), tr = linhas.reduce((s, x) => s + x.rec, 0);
-    L += tl; P += tp; R += tr;
-    const pct = (l, p) => (l + p ? Math.round((100 * l) / (l + p)) + "%" : "—");
-    return `<section><h2>${esc(g)}</h2><div class="w"><table><thead><tr><th>Estabelecimento</th>
-      ${TIPOS.map((t) => `<th class="n">${t} lançadas</th><th class="n">${t} pendentes</th>`).join("")}
-      <th class="n">NF3E/21 (direto)</th><th class="n">Recusadas</th><th class="n">% lançado</th></tr></thead><tbody>
-      ${linhas.map((x) => `<tr><td>${esc(estabNome(x.cod))}</td>${TIPOS.map((t) => `<td class="n">${num(x.t[t].l)}</td><td class="n">${x.t[t].p ? `<b>${num(x.t[t].p)}</b>` : "0"}</td>`).join("")}
-        <td class="n">${num(x.dir)}</td><td class="n">${num(x.rec)}</td><td class="n">${pct(x.l, x.p)}</td></tr>`).join("")}
-      <tr><th>Total</th>${TIPOS.map((t) => `<th class="n">${num(linhas.reduce((s, x) => s + x.t[t].l, 0))}</th><th class="n">${num(linhas.reduce((s, x) => s + x.t[t].p, 0))}</th>`).join("")}
-      <th class="n">${num(linhas.reduce((s, x) => s + x.dir, 0))}</th><th class="n">${num(tr)}</th><th class="n">${pct(tl, tp)}</th></tr></tbody></table></div></section>`;
-  }).join("");
-  main.innerHTML = `<div class="row"><label>Mês de emissão <input type="month" id="mes" value="${S.mes}"></label>
-    <label>Grupo <select id="gr"><option value="">Todos</option>${grupos().map((g) => `<option ${g === S.grupo ? "selected" : ""}>${esc(g)}</option>`).join("")}</select></label></div>
-    <div class="cards"><div class="card ok"><b>${num(L)}</b><span>Lançados</span></div><div class="card wn"><b>${num(P)}</b><span>Pendentes (inclui não confirmados)</span></div>
-    <div class="card in"><b>${L + P ? Math.round((100 * L) / (L + P)) : 0}%</b><span>Lançado</span></div><div class="card"><b>${num(R)}</b><span>Recusadas (fora da conta)</span></div></div>
-    ${blocos || '<section><p class="mu">Nenhum estabelecimento visível para o seu acesso.</p></section>'}
-    <p class="mu">Pessoais e recusadas não entram no denominador. NF3E e espécie 21 contam direto em lançados.</p>`;
-  $("#mes").onchange = (e) => { if (e.target.value) { S.mes = e.target.value; desenharAba(); } };
-  $("#gr").onchange = (e) => { S.grupo = e.target.value; desenharAba(); };
+// ---------------------------------------------------------------- Confronto diário (CF e Renova)
+async function abaConf(main, chave) {
+  const mes = S.mes, ini = `${mes}-01`, fim = `${mes}-${String(diasDoMes(mes)).padStart(2, "0")}`;
+  const ck = "conf" + mes;
+  S.cache[ck] ??= preparar(await api.confrontoDados(ini, fim), mes);
+  const rows = S.cache[ck], st = (S.conf[chave] ??= { ti: "", ex: "all", dt: null, mes: null });
+  if (st.mes !== mes || st.dt == null) { st.mes = mes; st.dt = diaPadrao(rows, mes, new Date().toISOString().slice(0, 10)); }
+  const c = calcular(rows, S.estabs, chave, { mes, dt: st.dt, ti: st.ti, ex: st.ex });
+  main.innerHTML = confHtml(c, { mes, ti: st.ti, ex: st.ex });
+  $("#fmes").onchange = (e) => { if (e.target.value) { S.mes = e.target.value; desenharAba(); } };
+  $("#fdt").onchange = (e) => { st.dt = Number(e.target.value); desenharAba(); };
+  $("#fti").onchange = (e) => { st.ti = e.target.value; desenharAba(); };
+  $("#fex").onchange = (e) => { st.ex = e.target.value; desenharAba(); };
 }
 
 // ---------------------------------------------------------------- abas de documentos
@@ -173,7 +143,7 @@ const COLS_EXTRA = {
   recusadas: [["recusa_motivo", "Motivo", (r) => esc(r.recusa_motivo)], ["recusa_observacao", "Observação", (r) => esc(r.recusa_observacao)], ["recusado_em", "Recusada em", (r) => dt(r.recusado_em)]],
 };
 const CHAVE = ["chave", "Chave / identificação", (r) => `<span class="kc">${esc(r.chave || "(sem chave)")}</span>`];
-const ROTULO = { lancar: "Lançado", recusar: "Recusar", pessoal: "Pessoal", desfazer: "Desfazer marca", reverter_recusa: "Reverter recusa", reverter_pessoal: "Reverter pessoal" };
+const ROTULO = { lancar: "Marcar como lançado", recusar: "Recusar documento", pessoal: "Marcar como pessoal", desfazer: "Voltar para pendente", reverter_recusa: "Reverter", reverter_pessoal: "Reverter" };
 
 function filtrar(rows, f) {
   const q = (f.q || "").toLowerCase(), forn = (f.forn || "").toLowerCase();
@@ -221,12 +191,27 @@ function tabela(a, rows) {
   const acoes = pode() ? a.acoes ?? [] : [];
   const soma = vis.reduce((s, r) => s + Number(r.valor), 0);
   $("#cnt").textContent = `· ${num(vis.length)} de ${num(rows.length)} · ${brl(soma)}`;
-  $("#res").innerHTML = vis.length ? `<div class="pw"><table><thead><tr>${cols.map((c) => `<th class="${c[3] || ""}">${c[1]}</th>`).join("")}${acoes.length ? "<th>Ações</th>" : ""}</tr></thead><tbody>
+  $("#res").innerHTML = vis.length ? `<div class="pw" id="pw"><table><thead><tr>${cols.map((c) => `<th class="${c[3] || ""}">${c[1]}</th>`).join("")}${acoes.length ? "<th>Ações</th>" : ""}</tr><tr class="sb"><th colspan="${cols.length + (acoes.length ? 1 : 0)}"><div class="sbs" id="sbs"><i id="sbi"></i></div></th></tr></thead><tbody>
     ${vis.slice(0, lim).map((r) => `<tr>${cols.map((c) => `<td class="${c[3] || ""}">${c[2](r)}</td>`).join("")}${acoes.length ? `<td class="ac">${acoes.map((x) => {
       if (x === "desfazer" && r.origem !== "Manual" && a.id === "lancamentos") return "";
       return `<button class="btn" data-act="${x}" data-id="${r.id}">${ROTULO[x]}</button> `;
     }).join("")}</td>` : ""}</tr>`).join("")}</tbody></table></div>
     ${vis.length > lim ? `<p><button class="btn" data-more="1">Mostrar mais (${num(vis.length - lim)} restantes)</button></p>` : ""}` : `<p class="mu">Nada para mostrar com estes filtros.</p>`;
+  sbar();
+}
+
+// Congela o cabeçalho e coloca uma barra de rolagem horizontal logo abaixo dele, sincronizada com a tabela
+function sbar() {
+  try {
+    const w = $("#pw"), s = $("#sbs"); if (!w || !s) return;
+    const t = w.querySelector("table"), th = w.querySelector("thead th");
+    w.style.setProperty("--hh", th.offsetHeight + "px");
+    const fit = () => { s.style.width = w.clientWidth + "px"; $("#sbi").style.width = t.scrollWidth + "px"; };
+    fit(); let a = 0;
+    s.onscroll = () => { if (a) { a = 0; return; } if (w.scrollLeft !== s.scrollLeft) { a = 1; w.scrollLeft = s.scrollLeft; } };
+    w.onscroll = () => { if (a) { a = 0; return; } if (s.scrollLeft !== w.scrollLeft) { a = 1; s.scrollLeft = w.scrollLeft; } };
+    window.addEventListener("resize", fit);
+  } catch (e) { /* sem barra extra: a tabela continua rolando normalmente */ }
 }
 
 async function agir(e, a, chave) {

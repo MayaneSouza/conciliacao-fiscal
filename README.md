@@ -24,4 +24,4 @@ Criar no Supabase (Authentication → Users → Add user / Invite). O usuário a
 
 ## Limites conhecidos
 - A leitura real das planilhas usa a SheetJS (CDN); testada apenas com a lógica dos importadores, não no navegador com arquivos reais.
-- Vínculo de pedido (SLA) e os gráficos do demo ainda não foram portados.
+- Vínculo de pedido (SLA): o painel "Status dos pedidos" do Confronto ainda não tem dados (aguarda a planilha de pedidos).
