@@ -32,6 +32,20 @@ const ABAS = [
   { id: "usuarios", nome: "Usuários", adm: true },
 ];
 
+// ---------------------------------------------------------------- tema (automático / claro / escuro)
+const TEMAS = [["auto", "Tema: automático"], ["light", "Tema: claro"], ["dark", "Tema: escuro"]];
+const temaAtual = () => { try { const t = localStorage.getItem("tema"); return t === "light" || t === "dark" ? t : "auto"; } catch (e) { return document.documentElement.getAttribute("data-theme") || "auto"; } };
+function aplicarTema(t) {
+  if (t === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", t);
+  try { t === "auto" ? localStorage.removeItem("tema") : localStorage.setItem("tema", t); } catch (e) { /* sem armazenamento: vale só nesta visita */ }
+}
+const botaoTema = () => `<button class="btn" type="button" data-tema="1" title="Alternar entre automático, claro e escuro">${TEMAS.find((x) => x[0] === temaAtual())[1]}</button>`;
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-tema]"); if (!b) return;
+  const i = TEMAS.findIndex((x) => x[0] === temaAtual()); aplicarTema(TEMAS[(i + 1) % 3][0]);
+  document.querySelectorAll("[data-tema]").forEach((x) => (x.textContent = TEMAS.find((y) => y[0] === temaAtual())[1]));
+});
+
 // ---------------------------------------------------------------- entrada
 const app = $("#app");
 function msg(el, texto, tipo = "e") { el.innerHTML = texto ? `<div class="msg ${tipo}" role="alert">${esc(texto)}</div>` : ""; }
@@ -41,7 +55,7 @@ function telaLogin() {
     <form id="fl"><label for="em">E-mail</label><input id="em" type="email" autocomplete="username" required>
     <label for="sn">Senha</label><input id="sn" type="password" autocomplete="current-password" required>
     <div id="lm"></div><div class="row" style="margin-top:12px"><button class="btn p" type="submit">Entrar</button>
-    <button class="btn" type="button" id="esq">Esqueci a senha</button></div></form></section></div>`;
+    <button class="btn" type="button" id="esq">Esqueci a senha</button>${botaoTema()}</div></form></section></div>`;
   $("#fl").onsubmit = async (e) => {
     e.preventDefault(); msg($("#lm"), "");
     try { await api.entrar($("#em").value.trim(), $("#sn").value); await iniciar(); }
@@ -89,7 +103,7 @@ function desenharApp() {
   const abas = ABAS.filter((a) => (!a.op || pode()) && (!a.adm || admin()));
   if (!abas.some((a) => a.id === S.aba)) S.aba = "cf";
   app.innerHTML = `<header>${api.mock ? '<div class="demo">Dados fictícios de teste. Nada aqui é real.</div>' : ""}<div class="bar hd"><h1>Conciliação fiscal</h1>
-      <span class="who">${esc(S.perfil.nome)} · ${esc(S.perfil.papel)}</span><button class="btn" id="sai">Sair</button></div>
+      <span class="who">${esc(S.perfil.nome)} · ${esc(S.perfil.papel)}</span>${botaoTema()}<button class="btn" id="sai">Sair</button></div>
       <nav role="tablist">${abas.map((a) => `<button role="tab" data-aba="${a.id}" aria-selected="${a.id === S.aba}">${esc(a.nome)}</button>`).join("")}</nav></header>
     <main id="main"></main>
     <dialog id="dlg"></dialog>`;
