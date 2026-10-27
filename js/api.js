@@ -27,7 +27,8 @@ export const api = {
   async entrar(email, senha) { ok(await sb.auth.signInWithPassword({ email, password: senha })); },
   async sair() { await sb.auth.signOut(); },
   async esqueciSenha(email) { ok(await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })); },
-  async definirSenha(senha) { ok(await sb.auth.updateUser({ password: senha })); },
+  async definirSenha(senha) { ok(await sb.auth.updateUser({ password: senha, data: { trocar_senha: false } })); },
+  async trocarSenhaPendente() { const { data } = await sb.auth.getUser(); return data?.user?.user_metadata?.trocar_senha === true; },
   async perfil() { return ok(await sb.from("perfil").select("*").eq("user_id", uid).maybeSingle()); },
   async estabs() { return ok(await sb.from("estabelecimento").select("*").order("cod")); },
 
@@ -81,6 +82,18 @@ export const api = {
   async conciliar(estab) { return ok(await sb.rpc("conciliar", { p_estab: estab })); },
 
   // administração
+  async gerirUsuarios(body) {
+    const { data, error } = await sb.functions.invoke("gerir-usuarios", { body });
+    if (error) {
+      let m = error.message;
+      try { const j = await error.context.json(); if (j?.erro) m = j.erro; } catch { /* mantém a mensagem */ }
+      throw new Error(m);
+    }
+    if (data?.erro) throw new Error(data.erro);
+    return data;
+  },
+  criarUsuario(d) { return this.gerirUsuarios({ acao: "criar", ...d }); },
+  redefinirSenha(user_id, senha) { return this.gerirUsuarios({ acao: "senha", user_id, senha }); },
   async perfis() { return ok(await sb.from("perfil").select("*").order("nome")); },
   async salvarPerfil(p) { ok(await sb.from("perfil").update({ nome: p.nome, papel: p.papel, grupos: p.grupos, ativo: p.ativo }).eq("user_id", p.user_id)); },
 };

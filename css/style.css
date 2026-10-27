@@ -87,3 +87,5 @@ dialog select{width:100%}.dz{border:2px dashed var(--ln);border-radius:10px;padd
   nav button{padding:12px 14px}
 }
 .dz input[type=file]{max-width:100%;font-size:14px;margin-top:8px}
+
+.gp{white-space:normal}.gp label{display:inline-flex;gap:4px;margin:0 10px 4px 0;align-items:center}

@@ -16,7 +16,7 @@ Site estático (sem servidor próprio): HTML + JavaScript no navegador, dados no
 - Repositório público é seguro para esta chave; quem não tem login não vê dados.
 
 ## Usuários
-Criar no Supabase (Authentication → Users → Add user / Invite). O usuário aparece na aba **Usuários** como inativo; o administrador define papel e grupos e ativa.
+O administrador cria usuários direto no site, na aba **Usuários → Novo usuário** (nome, e-mail, papel, grupos). Com senha provisória, o usuário é obrigado a trocá-la no primeiro acesso; sem senha, recebe convite por e-mail. Há também "Redefinir senha" por usuário. A criação passa pela Edge Function `gerir-usuarios` (código em `supabase/functions/`), que valida no servidor que quem chama é administrador ativo; a chave service_role nunca vai para o site.
 
 ## Testes
 - `tests/importers.test.mjs`: importadores x resultados do Python (ver cabeçalho do arquivo).

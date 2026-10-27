@@ -90,6 +90,7 @@ function telaEspera(texto) {
 async function iniciar() {
   const sessao = await api.sessao();
   if (!sessao) return telaLogin();
+  if (await api.trocarSenhaPendente()) return telaSenha();
   try { S.perfil = await api.perfil(); } catch (e) { return telaEspera("Não foi possível carregar seu perfil: " + e.message); }
   if (!S.perfil) return telaEspera("Seu usuário ainda não tem perfil. Peça ao administrador.");
   if (!S.perfil.ativo) return telaEspera("Seu acesso ainda não foi liberado. Peça ao administrador para ativar seu usuário.");
@@ -385,21 +386,57 @@ async function executar() {
 }
 
 // ---------------------------------------------------------------- Usuários
+function gerarSenha() {
+  const c = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789", a = crypto.getRandomValues(new Uint32Array(12));
+  return [...a].map((n) => c[n % c.length]).join("");
+}
+
 async function abaUsuarios(main) {
   const ps = await api.perfis(), gs = grupos();
-  main.innerHTML = `<section><h2>Usuários</h2>
-    <p class="mu">Para criar um usuário novo: Supabase → Authentication → Users → Add user (ou "Invite user"). Ele aparece aqui como <b>inativo</b>; defina o papel e os grupos e ative.</p>
+  const gruposHtml = (sel) => `<label><input type="checkbox" class="f-todos" ${sel == null ? "checked" : ""}> Todos</label>${gs.map((g) => `<label><input type="checkbox" class="f-grupo" value="${esc(g)}" ${sel?.includes(g) ? "checked" : ""}> ${esc(g)}</label>`).join("")}`;
+  const lerGrupos = (el) => ($(".f-todos", el).checked ? null : [...el.querySelectorAll(".f-grupo:checked")].map((x) => x.value));
+  main.innerHTML = `<section><h2>Novo usuário</h2>
+    <form id="fnu"><div class="row">
+      <div><label for="nu-nome">Nome</label><input id="nu-nome" required maxlength="120"></div>
+      <div><label for="nu-em">E-mail</label><input id="nu-em" type="email" required autocomplete="off"></div>
+      <div><label for="nu-papel">Papel</label><select id="nu-papel"><option>consulta</option><option>operador</option><option>administrador</option></select></div></div>
+      <label>Grupos que pode ver</label><div class="gp" id="nu-gp">${gruposHtml(null)}</div>
+      <label for="nu-sn">Senha provisória (opcional, mínimo 8 caracteres)</label>
+      <div class="row"><input id="nu-sn" type="text" minlength="8" maxlength="72" autocomplete="off" placeholder="Deixe em branco para enviar convite por e-mail"><button class="btn" type="button" id="nu-ger">Gerar senha</button></div>
+      <p class="mu">Com senha provisória, o usuário entra e é obrigado a trocá-la no primeiro acesso. Sem senha, ele recebe um e-mail de convite.</p>
+      <div id="nu-m"></div><div class="row"><button class="btn p" type="submit">Criar usuário</button></div></form></section>
+    <section><h2>Usuários</h2>
     <div class="w"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Grupos</th><th>Ativo</th><th></th></tr></thead><tbody>
     ${ps.map((p) => `<tr data-u="${esc(p.user_id)}"><td><input class="f-nome" value="${esc(p.nome)}" aria-label="Nome"></td><td>${esc(p.email)}</td>
       <td><select class="f-papel" aria-label="Papel">${["consulta", "operador", "administrador"].map((x) => `<option ${p.papel === x ? "selected" : ""}>${x}</option>`).join("")}</select></td>
-      <td class="gp"><label><input type="checkbox" class="f-todos" ${p.grupos == null ? "checked" : ""}> Todos</label>${gs.map((g) => `<label><input type="checkbox" class="f-grupo" value="${esc(g)}" ${p.grupos?.includes(g) ? "checked" : ""}> ${esc(g)}</label>`).join("")}</td>
-      <td><input type="checkbox" class="f-ativo" ${p.ativo ? "checked" : ""} aria-label="Ativo"></td><td><button class="btn" data-save="1">Salvar</button></td></tr>`).join("")}
+      <td class="gp">${gruposHtml(p.grupos)}</td>
+      <td><input type="checkbox" class="f-ativo" ${p.ativo ? "checked" : ""} aria-label="Ativo"></td><td><button class="btn" data-save="1">Salvar</button> <button class="btn" data-senha="1">Redefinir senha</button></td></tr>`).join("")}
     </tbody></table></div><div id="um"></div></section>`;
+  $("#nu-ger").onclick = () => { $("#nu-sn").value = gerarSenha(); };
+  $("#fnu").onsubmit = async (e) => {
+    e.preventDefault(); const m = $("#nu-m"), senha = $("#nu-sn").value.trim(), grupos = lerGrupos($("#nu-gp"));
+    if (grupos && !grupos.length) return msg(m, "Marque ao menos um grupo (ou \"Todos\").");
+    if (senha && senha.length < 8) return msg(m, "A senha provisória precisa de ao menos 8 caracteres.");
+    const d = { nome: $("#nu-nome").value.trim(), email: $("#nu-em").value.trim(), papel: $("#nu-papel").value, grupos };
+    if (senha) d.senha = senha;
+    try {
+      const r = await api.criarUsuario(d);
+      S.cache = {};
+      await abaUsuarios(main); rotular(main);
+      msg($("#um"), r.convite ? `Convite enviado para ${d.email}.` : `Usuário criado. Senha provisória (mostrada só agora; envie por canal seguro): ${senha}`, "o");
+    } catch (err) { msg(m, err.message); }
+  };
   $("main").onclick = async (e) => {
-    const b = e.target.closest("[data-save]"); if (!b) return;
-    const tr = b.closest("tr"), todos = $(".f-todos", tr).checked;
-    const p = { user_id: tr.dataset.u, nome: $(".f-nome", tr).value.trim(), papel: $(".f-papel", tr).value, ativo: $(".f-ativo", tr).checked,
-      grupos: todos ? null : [...tr.querySelectorAll(".f-grupo:checked")].map((x) => x.value) };
+    const b = e.target.closest("[data-save],[data-senha]"); if (!b) return;
+    const tr = b.closest("tr");
+    if (b.dataset.senha) {
+      const nova = gerarSenha();
+      if (!confirm(`Redefinir a senha de ${$(".f-nome", tr).value}? Uma senha provisória nova será gerada.`)) return;
+      try { await api.redefinirSenha(tr.dataset.u, nova); msg($("#um"), `Nova senha provisória (mostrada só agora; envie por canal seguro): ${nova}`, "o"); }
+      catch (err) { msg($("#um"), err.message); }
+      return;
+    }
+    const p = { user_id: tr.dataset.u, nome: $(".f-nome", tr).value.trim(), papel: $(".f-papel", tr).value, ativo: $(".f-ativo", tr).checked, grupos: lerGrupos(tr) };
     try { await api.salvarPerfil(p); msg($("#um"), "Salvo.", "o"); } catch (err) { msg($("#um"), err.message); }
   };
 }

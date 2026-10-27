@@ -31,7 +31,7 @@ export const api = {
   onAuth() {},
   async entrar(e, s) { if (s !== "ok") throw new Error("Invalid login credentials"); logado = true; },
   async sair() { logado = false; },
-  async esqueciSenha() {}, async definirSenha() {},
+  async esqueciSenha() {}, async definirSenha() {}, async trocarSenhaPendente() { return false; },
   async perfil() { return { user_id: "u1", nome: "Teste", papel, ativo: !location.search.includes("inativo"), grupos: null }; },
   async estabs() { return estabs; },
   async docs(sits, prog, per = {}) { return docs.filter((d) => sits.includes(d.situacao) && (!per.ini || d.emissao >= per.ini) && (!per.fim || d.emissao <= per.fim)).map((d) => ({ ...d })); },
@@ -64,5 +64,7 @@ export const api = {
   async marcarPessoal(id) { api.log.push(["pessoal", id]); docs.find((d) => d.id === id).situacao = "pessoal"; },
   async reverterPessoal(id) { api.log.push(["rev_pes", id]); docs.find((d) => d.id === id).situacao = "pendente"; },
   async perfis() { return perfis.map((p) => ({ ...p })); },
+  async criarUsuario(d) { api.log.push(["criar", d]); if (d.email === "erro@x.com") throw new Error("Já existe um usuário com este e-mail."); perfis.push({ user_id: "n" + perfis.length, nome: d.nome, email: d.email, papel: d.papel, grupos: d.grupos, ativo: true }); return { ok: true, convite: !d.senha }; },
+  async redefinirSenha(id, senha) { api.log.push(["senha", id, senha]); return { ok: true }; },
   async salvarPerfil(p) { api.log.push(["perfil", p]); },
 };
